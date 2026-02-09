@@ -134,6 +134,7 @@ app.delete('/api/history', (req, res) => {
 const users = new Map();
 const messages = loadMessages();
 const MAX_MESSAGES = 500;
+const voiceUsers = new Map();
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
@@ -149,6 +150,7 @@ io.on('connection', (socket) => {
     
     socket.emit('history', messages);
     io.emit('users', Array.from(users.values()));
+    socket.emit('voice-users', Array.from(voiceUsers.values()));
     
     const joinMsg = {
       id: uuidv4(),
@@ -204,8 +206,70 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('typing', { user: user.username, isTyping });
   });
 
+  socket.on('voice-join', () => {
+    const user = users.get(socket.id);
+    if (!user) return;
+    
+    const voiceUser = {
+      id: socket.id,
+      username: user.username,
+      color: user.color,
+      muted: false,
+      deafened: false
+    };
+    voiceUsers.set(socket.id, voiceUser);
+    
+    socket.to(Array.from(voiceUsers.keys()).filter(id => id !== socket.id))
+      .emit('voice-user-joined', voiceUser);
+    
+    io.emit('voice-users', Array.from(voiceUsers.values()));
+    console.log(`${user.username} joined voice channel`);
+  });
+
+  socket.on('voice-leave', () => {
+    const user = users.get(socket.id);
+    if (voiceUsers.has(socket.id)) {
+      voiceUsers.delete(socket.id);
+      io.emit('voice-users', Array.from(voiceUsers.values()));
+      io.emit('voice-user-left', socket.id);
+      console.log(`${user?.username} left voice channel`);
+    }
+  });
+
+  socket.on('voice-signal', ({ to, signal }) => {
+    io.to(to).emit('voice-signal', { from: socket.id, signal });
+  });
+
+  socket.on('voice-mute', (muted) => {
+    const voiceUser = voiceUsers.get(socket.id);
+    if (voiceUser) {
+      voiceUser.muted = muted;
+      io.emit('voice-users', Array.from(voiceUsers.values()));
+    }
+  });
+
+  socket.on('voice-deafen', (deafened) => {
+    const voiceUser = voiceUsers.get(socket.id);
+    if (voiceUser) {
+      voiceUser.deafened = deafened;
+      voiceUser.muted = deafened ? true : voiceUser.muted;
+      io.emit('voice-users', Array.from(voiceUsers.values()));
+    }
+  });
+
+  socket.on('voice-speaking', (speaking) => {
+    socket.broadcast.emit('voice-speaking', { oderId: socket.id, speaking });
+  });
+
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
+    
+    if (voiceUsers.has(socket.id)) {
+      voiceUsers.delete(socket.id);
+      io.emit('voice-users', Array.from(voiceUsers.values()));
+      io.emit('voice-user-left', socket.id);
+    }
+    
     if (user) {
       const leaveMsg = {
         id: uuidv4(),
