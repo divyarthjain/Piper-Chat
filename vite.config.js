@@ -7,7 +7,8 @@ export default defineConfig({
     host: true,
     proxy: {
       '/upload': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001'
+      '/uploads': 'http://localhost:3001',
+      '/api': 'http://localhost:3001'
     }
   }
 });
