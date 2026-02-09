@@ -1,13 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+const STORAGE_KEY = 'piper-chat-username';
 
 function JoinScreen({ onJoin }) {
   const [name, setName] = useState('');
+  const [savedName, setSavedName] = useState('');
+
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      setSavedName(stored);
+      setName(stored);
+    }
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (name.trim()) {
+      localStorage.setItem(STORAGE_KEY, name.trim());
       onJoin(name.trim());
     }
+  };
+
+  const handleClearSaved = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setSavedName('');
+    setName('');
   };
 
   return (
@@ -44,9 +62,18 @@ function JoinScreen({ onJoin }) {
             disabled={!name.trim()}
             className="w-full py-3 px-6 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl"
           >
-            Join Chat
+            {savedName ? `Join as ${savedName}` : 'Join Chat'}
           </button>
         </form>
+
+        {savedName && (
+          <button
+            onClick={handleClearSaved}
+            className="w-full mt-3 py-2 px-4 text-white/50 hover:text-white/80 text-sm transition-colors"
+          >
+            Not {savedName}? Click to change
+          </button>
+        )}
 
         <p className="text-center text-white/40 text-sm mt-6">
           Share your local network to invite others
