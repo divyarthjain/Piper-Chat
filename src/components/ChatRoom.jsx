@@ -3,8 +3,9 @@ import MessageList from './MessageList';
 import UserList from './UserList';
 import ImageUpload from './ImageUpload';
 import HistoryControls from './HistoryControls';
+import VoiceChannel from './VoiceChannel';
 
-function ChatRoom({ username, messages, users, typingUsers, onSendMessage, onSendImage, onTyping }) {
+function ChatRoom({ socket, username, messages, users, typingUsers, onSendMessage, onSendImage, onTyping }) {
   const [input, setInput] = useState('');
   const [showUsers, setShowUsers] = useState(false);
   const typingTimeout = useRef(null);
@@ -100,7 +101,8 @@ function ChatRoom({ username, messages, users, typingUsers, onSendMessage, onSen
         </form>
       </div>
 
-      <div className={`${showUsers ? 'block' : 'hidden'} lg:block`}>
+      <div className={`${showUsers ? 'block' : 'hidden'} lg:block lg:w-72 space-y-4`}>
+        <VoiceChannel socket={socket} currentUser={username} />
         <UserList users={users} currentUser={username} />
       </div>
     </div>

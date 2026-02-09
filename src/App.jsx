@@ -67,6 +67,7 @@ function App() {
 
   return (
     <ChatRoom
+      socket={socket}
       username={username}
       messages={messages}
       users={users}
