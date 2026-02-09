@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import StatusPicker from './StatusPicker';
 
-function UserList({ users, currentUser, socket }) {
+function UserList({ users, currentUser, socket, onStartDM }) {
   const [showPicker, setShowPicker] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
 
@@ -17,12 +17,7 @@ function UserList({ users, currentUser, socket }) {
     e.preventDefault();
     if (targetUser.username === currentUser) return;
 
-    const myRole = currentUserData?.role || 'member';
-    if (!['admin', 'moderator'].includes(myRole)) return;
-
-    const targetRole = targetUser.role || 'member';
-    if (myRole === 'moderator' && ['admin', 'moderator'].includes(targetRole)) return;
-
+    // Allow context menu for everyone to access "Message"
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -75,10 +70,10 @@ function UserList({ users, currentUser, socket }) {
         {users.map((user) => (
           <div
             key={user.id}
-            onClick={() => user.username === currentUser && setShowPicker(true)}
+            onClick={() => user.username === currentUser ? setShowPicker(true) : onStartDM(user.username)}
             onContextMenu={(e) => handleContextMenu(e, user)}
             className={`flex items-center gap-3 p-2 rounded-xl transition-all ${
-              user.username === currentUser ? 'bg-white/10 hover:bg-white/20 cursor-pointer' : 'hover:bg-white/5 cursor-default'
+              user.username === currentUser ? 'bg-white/10 hover:bg-white/20 cursor-pointer' : 'hover:bg-white/5 cursor-pointer'
             }`}
           >
             <div className="relative">
@@ -119,6 +114,20 @@ function UserList({ users, currentUser, socket }) {
           <div className="px-3 py-2 text-xs font-semibold text-white/40 border-b border-white/5 mb-1">
             {contextMenu.user.username}
           </div>
+
+          <button 
+            onClick={() => {
+              onStartDM(contextMenu.user.username);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Message
+          </button>
+          <div className="h-px bg-white/5 my-1" />
           
           {currentUserData?.role === 'admin' && (
             <>
@@ -150,22 +159,26 @@ function UserList({ users, currentUser, socket }) {
             </>
           )}
 
-          <button 
-            onClick={() => handleAction('kick')}
-            className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-white/10 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Kick User
-          </button>
-          
-          <div className="h-px bg-white/5 my-1" />
-          
-          <div className="px-3 py-1 text-[10px] font-semibold text-white/30 uppercase">Mute</div>
-          <button onClick={() => handleAction('mute', 5)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">5 Minutes</button>
-          <button onClick={() => handleAction('mute', 15)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">15 Minutes</button>
-          <button onClick={() => handleAction('mute', 60)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">1 Hour</button>
+          {(currentUserData?.role === 'admin' || currentUserData?.role === 'moderator') && (
+            <>
+              <button 
+                onClick={() => handleAction('kick')}
+                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-white/10 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Kick User
+              </button>
+              
+              <div className="h-px bg-white/5 my-1" />
+              
+              <div className="px-3 py-1 text-[10px] font-semibold text-white/30 uppercase">Mute</div>
+              <button onClick={() => handleAction('mute', 5)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">5 Minutes</button>
+              <button onClick={() => handleAction('mute', 15)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">15 Minutes</button>
+              <button onClick={() => handleAction('mute', 60)} className="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors">1 Hour</button>
+            </>
+          )}
         </div>
       )}
 

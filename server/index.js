@@ -8,12 +8,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import crypto from 'crypto';
+import * as cheerio from 'cheerio';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dataDir = path.join(__dirname, '../data');
 const historyFile = path.join(dataDir, 'chat-history.json');
+const channelsFile = path.join(dataDir, 'channels.json');
 const webhooksFile = path.join(dataDir, 'webhooks.json');
 const forumFile = path.join(dataDir, 'forum-topics.json');
 const adminsFile = path.join(dataDir, 'admins.json');
@@ -59,6 +61,26 @@ function saveMessages(msgs) {
     fs.writeFileSync(historyFile, JSON.stringify(msgs, null, 2));
   } catch (err) {
     console.error('Failed to save chat history:', err.message);
+  }
+}
+
+function loadChannels() {
+  try {
+    if (fs.existsSync(channelsFile)) {
+      const data = fs.readFileSync(channelsFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load channels:', err.message);
+  }
+  return ['general', 'random', 'dev'];
+}
+
+function saveChannels(chans) {
+  try {
+    fs.writeFileSync(channelsFile, JSON.stringify(chans, null, 2));
+  } catch (err) {
+    console.error('Failed to save channels:', err.message);
   }
 }
 
@@ -159,6 +181,67 @@ app.post('/upload', upload.single('file'), (req, res) => {
     mimetype: req.file.mimetype,
     isImage
   });
+});
+
+
+const linkPreviewCache = new Map();
+
+app.get('/api/preview', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  if (linkPreviewCache.has(url)) {
+    return res.json(linkPreviewCache.get(url));
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; LinkPreviewBot/1.0; +http://localhost)'
+      }
+    });
+    
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.statusText}`);
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
+    const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
+    const image = $('meta[property="og:image"]').attr('content') || '';
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+
+    const previewData = {
+      title: title.substring(0, 100),
+      description: description.substring(0, 200),
+      image,
+      domain,
+      url
+    };
+
+    if (linkPreviewCache.size >= 100) {
+      const firstKey = linkPreviewCache.keys().next().value;
+      linkPreviewCache.delete(firstKey);
+    }
+    linkPreviewCache.set(url, previewData);
+
+    res.json(previewData);
+  } catch (error) {
+    console.error('Link preview error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch preview' });
+  }
 });
 
 app.get('/api/history/export', (req, res) => {
@@ -313,6 +396,7 @@ io.on('connection', (socket) => {
     users.set(socket.id, user);
     
     socket.emit('history', messages);
+    socket.emit('channels', channels);
     socket.emit('forum-topics', forumTopics);
     io.emit('users', Array.from(users.values()));
     socket.emit('voice-users', Array.from(voiceUsers.values()));
@@ -421,7 +505,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('message', (content, parentId = null) => {
+  socket.on('message', (content, parentId = null, channelId = 'chat') => {
     const user = users.get(socket.id);
     if (!user) return;
 
@@ -440,6 +524,7 @@ io.on('connection', (socket) => {
       type: 'text',
       content,
       parentId,
+      channelId,
       replies: [],
       user: { id: user.id, username: user.username, color: user.color, role: user.role },
       timestamp: new Date(),
@@ -462,7 +547,7 @@ io.on('connection', (socket) => {
     io.emit('message', msg);
   });
 
-  socket.on('image', (imageUrl) => {
+  socket.on('image', (imageUrl, channelId = 'chat') => {
     const user = users.get(socket.id);
     if (!user) return;
 
@@ -480,6 +565,7 @@ io.on('connection', (socket) => {
       id: uuidv4(),
       type: 'image',
       content: imageUrl,
+      channelId,
       user: { id: user.id, username: user.username, color: user.color, role: user.role },
       timestamp: new Date(),
       reactions: []
@@ -492,7 +578,7 @@ io.on('connection', (socket) => {
     io.emit('message', msg);
   });
 
-  socket.on('file', (fileData) => {
+  socket.on('file', (fileData, channelId = 'chat') => {
     const user = users.get(socket.id);
     if (!user) return;
 
@@ -510,6 +596,7 @@ io.on('connection', (socket) => {
       id: uuidv4(),
       type: 'file',
       content: fileData, // { url, filename, originalName, size, mimetype }
+      channelId,
       user: { id: user.id, username: user.username, color: user.color, role: user.role },
       timestamp: new Date(),
       reactions: []
@@ -562,10 +649,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('typing', (isTyping) => {
+  socket.on('typing', ({ isTyping, channelId = 'general' }) => {
     const user = users.get(socket.id);
     if (!user) return;
-    socket.broadcast.emit('typing', { user: user.username, isTyping });
+    socket.broadcast.emit('typing', { user: user.username, isTyping, channelId });
   });
 
   socket.on('set-status', ({ status, customStatus }) => {
@@ -575,6 +662,133 @@ io.on('connection', (socket) => {
     user.status = status;
     user.customStatus = customStatus;
     io.emit('users', Array.from(users.values()));
+  });
+
+  socket.on('create-channel', (channelName) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    if (!channelName || channelName.length > 20 || channels.includes(channelName)) return;
+
+    channels.push(channelName);
+    saveChannels(channels);
+    io.emit('channels', channels);
+
+    const msg = {
+      id: uuidv4(),
+      type: 'system',
+      content: `${user.username} created channel #${channelName}`,
+      channelId: 'general',
+      timestamp: new Date(),
+      reactions: []
+    };
+    messages.push(msg);
+    saveMessages(messages);
+    io.emit('message', msg);
+  });
+
+  socket.on('message', ({ content, parentId = null, channelId = 'general' }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
+
+    const msg = {
+      id: uuidv4(),
+      type: 'text',
+      content,
+      parentId,
+      channelId,
+      replies: [],
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
+    };
+    
+    if (parentId) {
+      const parent = messages.find(m => m.id === parentId);
+      if (parent) {
+        if (!parent.replies) parent.replies = [];
+        parent.replies.push(msg.id);
+        io.emit('message-updated', parent);
+      }
+    }
+    
+    messages.push(msg);
+    if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
+    
+    io.emit('message', msg);
+  });
+
+  socket.on('image', ({ imageUrl, channelId = 'general' }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
+
+    const msg = {
+      id: uuidv4(),
+      type: 'image',
+      content: imageUrl,
+      channelId,
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
+    };
+    
+    messages.push(msg);
+    if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
+    
+    io.emit('message', msg);
+  });
+
+  socket.on('file', ({ fileData, channelId = 'general' }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
+
+    const msg = {
+      id: uuidv4(),
+      type: 'file',
+      content: fileData,
+      channelId,
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
+    };
+    
+    messages.push(msg);
+    if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
+    
+    io.emit('message', msg);
   });
 
   socket.on('forum-create-topic', ({ title, body, tags }) => {
@@ -632,10 +846,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('screen-share-start', () => {
+  socket.on('screen-share-start', (streamId) => {
     if (currentScreenSharer) return;
     currentScreenSharer = socket.id;
-    io.emit('screen-share-started', { oderId: socket.id, username: users.get(socket.id)?.username });
+    io.emit('screen-share-started', { oderId: socket.id, username: users.get(socket.id)?.username, streamId });
   });
 
   socket.on('screen-share-stop', () => {

@@ -7,16 +7,64 @@ const ICE_SERVERS = {
   ]
 };
 
+function VideoTile({ stream, username, isLocal, isMuted }) {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    } else if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, [stream]);
+
+  return (
+    <div className="relative group bg-gray-900 rounded-xl overflow-hidden aspect-video border border-white/10 shadow-lg">
+      {stream ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={true}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-gray-800">
+          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold text-white ring-4 ring-white/5">
+            {username?.[0]?.toUpperCase()}
+          </div>
+        </div>
+      )}
+      
+      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+        <div className="bg-black/60 px-2 py-1 rounded-md text-xs text-white backdrop-blur-sm truncate shadow-sm flex items-center gap-1">
+          {username} {isLocal && <span className="text-white/50">(You)</span>}
+        </div>
+        
+        {isMuted && (
+          <div className="bg-red-500/90 p-1.5 rounded-md text-white backdrop-blur-sm shadow-sm">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
+            </svg>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function VoiceChannel({ socket, currentUser }) {
   const [inVoice, setInVoice] = useState(false);
   const [voiceUsers, setVoiceUsers] = useState([]);
   const [muted, setMuted] = useState(false);
+  const [videoEnabled, setVideoEnabled] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [speakingUsers, setSpeakingUsers] = useState(new Set());
   const [error, setError] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
   const [screenSharer, setScreenSharer] = useState(null);
   const [remoteScreenStream, setRemoteScreenStream] = useState(null);
+  const [userStreams, setUserStreams] = useState({});
 
   const localStream = useRef(null);
   const screenVideoRef = useRef(null);
@@ -38,6 +86,11 @@ function VoiceChannel({ socket, currentUser }) {
 
     socket.on('voice-user-left', (oderId) => {
       closePeerConnection(oderId);
+      setUserStreams(prev => {
+        const next = { ...prev };
+        delete next[oderId];
+        return next;
+      });
     });
 
     socket.on('voice-signal', async ({ from, signal }) => {
@@ -53,8 +106,8 @@ function VoiceChannel({ socket, currentUser }) {
       });
     });
 
-    socket.on('screen-share-started', ({ oderId, username }) => {
-      setScreenSharer({ oderId, username });
+    socket.on('screen-share-started', ({ oderId, username, streamId }) => {
+      setScreenSharer({ oderId, username, streamId });
     });
 
     socket.on('screen-share-stopped', (oderId) => {
@@ -95,11 +148,24 @@ function VoiceChannel({ socket, currentUser }) {
     };
 
     pc.ontrack = (event) => {
-      if (event.track.kind === 'video') {
-        if (screenVideoRef.current) {
-          screenVideoRef.current.srcObject = event.streams[0];
+      const stream = event.streams[0];
+      const isScreenShare = screenSharerRef.current && 
+                            screenSharerRef.current.oderId === oderId &&
+                            (screenSharerRef.current.streamId ? 
+                              stream.id === screenSharerRef.current.streamId : 
+                              (event.track.kind === 'video' && 
+                               audioElements.current.get(oderId)?.srcObject?.id !== stream.id)
+                            );
+
+      if (isScreenShare) {
+        if (event.track.kind === 'video') {
+           if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
         }
         return;
+      }
+
+      if (event.track.kind === 'video') {
+         setUserStreams(prev => ({ ...prev, [oderId]: stream }));
       }
 
       let audio = audioElements.current.get(oderId);
@@ -108,19 +174,17 @@ function VoiceChannel({ socket, currentUser }) {
         audio.autoplay = true;
         audioElements.current.set(oderId, audio);
       }
-      audio.srcObject = event.streams[0];
-
-      setupVoiceDetection(oderId, event.streams[0]);
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        closePeerConnection(oderId);
+      
+      if (audio.srcObject !== stream) {
+        audio.srcObject = stream;
       }
+
+      setupVoiceDetection(oderId, stream);
     };
 
-    if (initiator) {
+    pc.onnegotiationneeded = async () => {
       try {
+        if (pc.signalingState !== 'stable') return;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('voice-signal', {
@@ -128,9 +192,15 @@ function VoiceChannel({ socket, currentUser }) {
           signal: { type: 'offer', sdp: offer.sdp }
         });
       } catch (err) {
-        console.error('Failed to create offer:', err);
+        console.error('Negotiation failed:', err);
       }
-    }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        closePeerConnection(oderId);
+      }
+    };
 
     return pc;
   }, [socket]);
@@ -220,9 +290,8 @@ function VoiceChannel({ socket, currentUser }) {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       setScreenStream(stream);
-      socket.emit('screen-share-start');
+      socket.emit('screen-share-start', stream.id);
       
-      // Add track to existing peers
       stream.getTracks().forEach(track => {
         peerConnections.current.forEach(pc => {
           pc.addTrack(track, stream);
@@ -241,6 +310,39 @@ function VoiceChannel({ socket, currentUser }) {
       screenStream.getTracks().forEach(track => track.stop());
       setScreenStream(null);
       socket.emit('screen-share-stop');
+    }
+  };
+
+  const toggleVideo = async () => {
+    try {
+      if (videoEnabled) {
+        if (localStream.current) {
+          const videoTrack = localStream.current.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.stop();
+            localStream.current.removeTrack(videoTrack);
+            
+            peerConnections.current.forEach(pc => {
+              const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+              if (sender) pc.removeTrack(sender);
+            });
+          }
+        }
+        setVideoEnabled(false);
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const videoTrack = stream.getVideoTracks()[0];
+        
+        if (localStream.current) {
+          localStream.current.addTrack(videoTrack);
+          peerConnections.current.forEach(pc => {
+            pc.addTrack(videoTrack, localStream.current);
+          });
+        }
+        setVideoEnabled(true);
+      }
+    } catch (err) {
+      console.error('Failed to toggle video:', err);
     }
   };
 
@@ -389,35 +491,15 @@ function VoiceChannel({ socket, currentUser }) {
       )}
 
       {voiceUsers.length > 0 && (
-        <div className="space-y-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           {voiceUsers.map(user => (
-            <div
+            <VideoTile
               key={user.id}
-              className={`flex items-center gap-2 p-2 rounded-lg transition-all ${
-                speakingUsers.has(user.id) ? 'bg-green-500/20 ring-2 ring-green-500/50' : 'bg-white/5'
-              }`}
-            >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                style={{ backgroundColor: user.color }}
-              >
-                {user.username[0].toUpperCase()}
-              </div>
-              <span className="text-white text-sm flex-1">{user.username}</span>
-              
-              <div className="flex items-center gap-1">
-                {user.muted && (
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
-                  </svg>
-                )}
-                {user.deafened && (
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M3.63 3.63a.996.996 0 000 1.41L7.29 8.7 7 9H4c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h3l3.29 3.29c.63.63 1.71.18 1.71-.71v-4.17l4.18 4.18c-.49.37-1.02.68-1.6.91-.36.15-.58.53-.58.92 0 .72.73 1.18 1.39.91.8-.33 1.55-.77 2.22-1.31l1.34 1.34a.996.996 0 101.41-1.41L5.05 3.63c-.39-.39-1.02-.39-1.42 0zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-3.83-2.4-7.11-5.78-8.4-.59-.23-1.22.23-1.22.86v.19c0 .38.25.71.61.85C17.18 6.54 19 9.06 19 12zm-8.71-6.29l-.17.17L12 7.76V6.41c0-.89-1.08-1.33-1.71-.7zM16.5 12A4.5 4.5 0 0014 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z"/>
-                  </svg>
-                )}
-              </div>
-            </div>
+              stream={user.id === socket.id ? localStream.current : userStreams[user.id]}
+              username={user.username}
+              isLocal={user.id === socket.id}
+              isMuted={user.muted}
+            />
           ))}
         </div>
       )}
@@ -439,6 +521,24 @@ function VoiceChannel({ socket, currentUser }) {
               <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                 <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+              </svg>
+            )}
+          </button>
+
+          <button
+            onClick={toggleVideo}
+            className={`p-3 rounded-full transition-colors ${
+              !videoEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-white/10 hover:bg-white/20'
+            }`}
+            title={videoEnabled ? 'Turn Off Camera' : 'Turn On Camera'}
+          >
+            {videoEnabled ? (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/>
               </svg>
             )}
           </button>

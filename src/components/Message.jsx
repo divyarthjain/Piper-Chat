@@ -2,8 +2,16 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import LinkPreview from './LinkPreview';
 
 const SERVER_URL = `http://${window.location.hostname}:3001`;
+
+const extractUrl = (text) => {
+  if (typeof text !== 'string') return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const match = text.match(urlRegex);
+  return match ? match[0] : null;
+};
 
 function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply }) {
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -249,6 +257,7 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
                   >
                     {message.content}
                   </ReactMarkdown>
+                  {extractUrl(message.content) && <LinkPreview url={extractUrl(message.content)} />}
                 </div>
               )}
             </div>
