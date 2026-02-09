@@ -11,6 +11,33 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const dataDir = path.join(__dirname, '../data');
+const historyFile = path.join(dataDir, 'chat-history.json');
+
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+function loadMessages() {
+  try {
+    if (fs.existsSync(historyFile)) {
+      const data = fs.readFileSync(historyFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load chat history:', err.message);
+  }
+  return [];
+}
+
+function saveMessages(msgs) {
+  try {
+    fs.writeFileSync(historyFile, JSON.stringify(msgs, null, 2));
+  } catch (err) {
+    console.error('Failed to save chat history:', err.message);
+  }
+}
+
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
@@ -59,9 +86,54 @@ app.post('/upload', upload.single('image'), (req, res) => {
   });
 });
 
+app.get('/api/history/export', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="piper-chat-history-${Date.now()}.json"`);
+  res.json({
+    exportedAt: new Date().toISOString(),
+    messageCount: messages.length,
+    messages: messages
+  });
+});
+
+app.post('/api/history/import', (req, res) => {
+  try {
+    const { messages: importedMessages } = req.body;
+    
+    if (!Array.isArray(importedMessages)) {
+      return res.status(400).json({ error: 'Invalid format: messages must be an array' });
+    }
+    
+    const validMessages = importedMessages.filter(msg => 
+      msg.id && msg.type && msg.content && msg.timestamp
+    );
+    
+    messages.length = 0;
+    messages.push(...validMessages.slice(-MAX_MESSAGES));
+    saveMessages(messages);
+    
+    io.emit('history', messages);
+    
+    res.json({ 
+      success: true, 
+      imported: validMessages.length,
+      message: `Imported ${validMessages.length} messages`
+    });
+  } catch (err) {
+    res.status(400).json({ error: 'Failed to import: ' + err.message });
+  }
+});
+
+app.delete('/api/history', (req, res) => {
+  messages.length = 0;
+  saveMessages(messages);
+  io.emit('history', messages);
+  res.json({ success: true, message: 'Chat history cleared' });
+});
+
 const users = new Map();
-const messages = [];
-const MAX_MESSAGES = 100;
+const messages = loadMessages();
+const MAX_MESSAGES = 500;
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
@@ -102,6 +174,7 @@ io.on('connection', (socket) => {
     
     messages.push(msg);
     if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
     
     io.emit('message', msg);
   });
@@ -120,6 +193,7 @@ io.on('connection', (socket) => {
     
     messages.push(msg);
     if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
     
     io.emit('message', msg);
   });
