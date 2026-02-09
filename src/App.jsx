@@ -10,6 +10,7 @@ function App() {
   const [username, setUsername] = useState('');
   const [joined, setJoined] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [forumTopics, setForumTopics] = useState([]);
   const [users, setUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
 
@@ -18,8 +19,16 @@ function App() {
       setMessages(history);
     });
 
+    socket.on('forum-topics', (topics) => {
+      setForumTopics(topics);
+    });
+
     socket.on('message', (msg) => {
       setMessages((prev) => [...prev, msg]);
+    });
+
+    socket.on('message-updated', (updatedMsg) => {
+      setMessages((prev) => prev.map(msg => msg.id === updatedMsg.id ? updatedMsg : msg));
     });
 
     socket.on('users', (userList) => {
@@ -35,11 +44,39 @@ function App() {
       });
     });
 
+    socket.on('kicked', () => {
+      alert('You have been kicked from the chat.');
+      window.location.reload();
+    });
+
+    socket.on('muted', ({ duration }) => {
+      alert(`You have been muted for ${duration} minutes.`);
+    });
+
+    socket.on('system-message', (msg) => {
+      setMessages((prev) => [...prev, {
+        id: Date.now(),
+        type: 'system',
+        content: msg,
+        timestamp: new Date()
+      }]);
+    });
+
+    socket.on('role-updated', (newRole) => {
+      alert(`Your role has been updated to: ${newRole}`);
+    });
+
     return () => {
       socket.off('history');
+      socket.off('forum-topics');
       socket.off('message');
+      socket.off('message-updated');
       socket.off('users');
       socket.off('typing');
+      socket.off('kicked');
+      socket.off('muted');
+      socket.off('system-message');
+      socket.off('role-updated');
     };
   }, []);
 
@@ -70,6 +107,7 @@ function App() {
       socket={socket}
       username={username}
       messages={messages}
+      forumTopics={forumTopics}
       users={users}
       typingUsers={typingUsers}
       onSendMessage={handleSendMessage}

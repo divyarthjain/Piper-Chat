@@ -14,8 +14,12 @@ function VoiceChannel({ socket, currentUser }) {
   const [deafened, setDeafened] = useState(false);
   const [speakingUsers, setSpeakingUsers] = useState(new Set());
   const [error, setError] = useState(null);
+  const [screenStream, setScreenStream] = useState(null);
+  const [screenSharer, setScreenSharer] = useState(null);
+  const [remoteScreenStream, setRemoteScreenStream] = useState(null);
 
   const localStream = useRef(null);
+  const screenVideoRef = useRef(null);
   const peerConnections = useRef(new Map());
   const audioElements = useRef(new Map());
   const audioContext = useRef(null);
@@ -49,12 +53,23 @@ function VoiceChannel({ socket, currentUser }) {
       });
     });
 
+    socket.on('screen-share-started', ({ oderId, username }) => {
+      setScreenSharer({ oderId, username });
+    });
+
+    socket.on('screen-share-stopped', (oderId) => {
+      setScreenSharer(null);
+      setRemoteScreenStream(null);
+    });
+
     return () => {
       socket.off('voice-users');
       socket.off('voice-user-joined');
       socket.off('voice-user-left');
       socket.off('voice-signal');
       socket.off('voice-speaking');
+      socket.off('screen-share-started');
+      socket.off('screen-share-stopped');
     };
   }, [socket, inVoice]);
 
@@ -80,6 +95,13 @@ function VoiceChannel({ socket, currentUser }) {
     };
 
     pc.ontrack = (event) => {
+      if (event.track.kind === 'video') {
+        if (screenVideoRef.current) {
+          screenVideoRef.current.srcObject = event.streams[0];
+        }
+        return;
+      }
+
       let audio = audioElements.current.get(oderId);
       if (!audio) {
         audio = new Audio();
@@ -194,6 +216,34 @@ function VoiceChannel({ socket, currentUser }) {
     checkAudio();
   }, []);
 
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      setScreenStream(stream);
+      socket.emit('screen-share-start');
+      
+      // Add track to existing peers
+      stream.getTracks().forEach(track => {
+        peerConnections.current.forEach(pc => {
+          pc.addTrack(track, stream);
+        });
+        
+        track.onended = () => stopScreenShare();
+      });
+
+    } catch (err) {
+      console.error('Screen share failed:', err);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStream) {
+      screenStream.getTracks().forEach(track => track.stop());
+      setScreenStream(null);
+      socket.emit('screen-share-stop');
+    }
+  };
+
   const joinVoice = async () => {
     try {
       setError(null);
@@ -283,14 +333,54 @@ function VoiceChannel({ socket, currentUser }) {
             Join
           </button>
         ) : (
-          <button
-            onClick={leaveVoice}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Leave
-          </button>
+          <div className="flex gap-2">
+            {!screenStream ? (
+              <button
+                onClick={startScreenShare}
+                className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
+                title="Share Screen"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={stopScreenShare}
+                className="px-3 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-sm font-medium rounded-lg transition-colors"
+                title="Stop Sharing"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={leaveVoice}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Leave
+            </button>
+          </div>
         )}
       </div>
+
+      {screenSharer && (
+        <div className="mb-3 relative group">
+          <video 
+            ref={screenVideoRef} 
+            autoPlay 
+            playsInline 
+            className="w-full rounded-xl bg-black/50 aspect-video object-contain"
+          />
+          <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-white flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            {screenSharer.username} is sharing
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 p-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">

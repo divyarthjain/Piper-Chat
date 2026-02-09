@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-function ImageUpload({ onUpload }) {
+function FileUpload({ onUpload }) {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
@@ -12,14 +12,17 @@ function ImageUpload({ onUpload }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      alert('Please select a valid image file (JPEG, PNG, GIF, or WebP)');
+    // Block executables for security
+    const blockedExtensions = ['.exe', '.bat', '.sh', '.cmd', '.msi', '.dll', '.app', '.dmg'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    
+    if (blockedExtensions.includes(ext)) {
+      alert('Executable files are not allowed for security reasons.');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image must be less than 10MB');
+    if (file.size > 25 * 1024 * 1024) {
+      alert('File must be less than 25MB');
       return;
     }
 
@@ -27,7 +30,7 @@ function ImageUpload({ onUpload }) {
 
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('file', file);
 
       const response = await fetch('/upload', {
         method: 'POST',
@@ -39,10 +42,10 @@ function ImageUpload({ onUpload }) {
       }
 
       const data = await response.json();
-      onUpload(data.url);
+      onUpload(data); // Returns { url, filename, originalName, size, mimetype }
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload image. Please try again.');
+      alert('Failed to upload file. Please try again.');
     } finally {
       setUploading(false);
       if (fileInputRef.current) {
@@ -57,7 +60,6 @@ function ImageUpload({ onUpload }) {
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
-        accept="image/jpeg,image/png,image/gif,image/webp"
         className="hidden"
       />
       <button
@@ -65,7 +67,7 @@ function ImageUpload({ onUpload }) {
         onClick={handleClick}
         disabled={uploading}
         className="p-3 bg-white/10 border border-white/20 rounded-xl text-white/70 hover:text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-        title="Upload image"
+        title="Upload file"
       >
         {uploading ? (
           <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -74,7 +76,7 @@ function ImageUpload({ onUpload }) {
           </svg>
         ) : (
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
           </svg>
         )}
       </button>
@@ -82,4 +84,4 @@ function ImageUpload({ onUpload }) {
   );
 }
 
-export default ImageUpload;
+export default FileUpload;

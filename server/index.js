@@ -7,15 +7,39 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dataDir = path.join(__dirname, '../data');
 const historyFile = path.join(dataDir, 'chat-history.json');
+const webhooksFile = path.join(dataDir, 'webhooks.json');
+const forumFile = path.join(dataDir, 'forum-topics.json');
+const adminsFile = path.join(dataDir, 'admins.json');
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
+}
+
+function loadAdmins() {
+  try {
+    if (fs.existsSync(adminsFile)) {
+      const data = fs.readFileSync(adminsFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load admins:', err.message);
+  }
+  return {};
+}
+
+function saveAdmins(admins) {
+  try {
+    fs.writeFileSync(adminsFile, JSON.stringify(admins, null, 2));
+  } catch (err) {
+    console.error('Failed to save admins:', err.message);
+  }
 }
 
 function loadMessages() {
@@ -35,6 +59,46 @@ function saveMessages(msgs) {
     fs.writeFileSync(historyFile, JSON.stringify(msgs, null, 2));
   } catch (err) {
     console.error('Failed to save chat history:', err.message);
+  }
+}
+
+function loadForumTopics() {
+  try {
+    if (fs.existsSync(forumFile)) {
+      const data = fs.readFileSync(forumFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load forum topics:', err.message);
+  }
+  return [];
+}
+
+function saveForumTopics(topics) {
+  try {
+    fs.writeFileSync(forumFile, JSON.stringify(topics, null, 2));
+  } catch (err) {
+    console.error('Failed to save forum topics:', err.message);
+  }
+}
+
+function loadWebhooks() {
+  try {
+    if (fs.existsSync(webhooksFile)) {
+      const data = fs.readFileSync(webhooksFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Failed to load webhooks:', err.message);
+  }
+  return [];
+}
+
+function saveWebhooks(hooks) {
+  try {
+    fs.writeFileSync(webhooksFile, JSON.stringify(hooks, null, 2));
+  } catch (err) {
+    console.error('Failed to save webhooks:', err.message);
   }
 }
 
@@ -67,22 +131,33 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype);
-    cb(null, ext && mime);
+    const BLOCKED_EXTENSIONS = ['.exe', '.bat', '.sh', '.cmd', '.msi', '.dll'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    
+    if (BLOCKED_EXTENSIONS.includes(ext)) {
+      return cb(new Error('Executable files are not allowed'));
+    }
+    
+    cb(null, true);
   }
 });
 
-app.post('/upload', upload.single('image'), (req, res) => {
+app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
+
+  const isImage = /jpeg|jpg|png|gif|webp/.test(path.extname(req.file.originalname).toLowerCase());
+
   res.json({ 
     url: `/uploads/${req.file.filename}`,
-    filename: req.file.filename
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
+    isImage
   });
 });
 
@@ -131,48 +206,254 @@ app.delete('/api/history', (req, res) => {
   res.json({ success: true, message: 'Chat history cleared' });
 });
 
+// Webhook API endpoints
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'piper-webhook-secret';
+
+app.get('/api/webhooks/info', (req, res) => {
+  res.json({
+    endpoint: '/api/webhooks/:source',
+    headers: { 'X-Webhook-Secret': 'your-secret', 'Content-Type': 'application/json' },
+    githubEvents: ['push', 'pull_request', 'issues'],
+    genericFormat: { text: 'Message content', username: 'Bot Name', icon: '🤖' }
+  });
+});
+
+app.post('/api/webhooks/:source', (req, res) => {
+  const { source } = req.params;
+  const secret = req.headers['x-webhook-secret'];
+  
+  if (secret !== WEBHOOK_SECRET) {
+    return res.status(401).json({ error: 'Invalid webhook secret' });
+  }
+  
+  let botMessage = '';
+  let icon = '🤖';
+  
+  // GitHub webhook
+  if (req.headers['x-github-event']) {
+    const event = req.headers['x-github-event'];
+    const payload = req.body;
+    
+    switch (event) {
+      case 'push':
+        const commits = payload.commits?.length || 0;
+        const branch = payload.ref?.replace('refs/heads/', '') || 'unknown';
+        botMessage = `🔨 **${payload.pusher?.name}** pushed ${commits} commit(s) to \`${branch}\``;
+        icon = '🔨';
+        break;
+      case 'pull_request':
+        const action = payload.action;
+        botMessage = `🔀 **${payload.sender?.login}** ${action} PR #${payload.number}: ${payload.pull_request?.title}`;
+        icon = '🔀';
+        break;
+      case 'issues':
+        botMessage = `📋 **${payload.sender?.login}** ${payload.action} issue #${payload.issue?.number}: ${payload.issue?.title}`;
+        icon = '📋';
+        break;
+      default:
+        botMessage = `📡 GitHub event: ${event}`;
+    }
+  } else {
+    // Generic webhook format
+    const { text, username: botName, icon: customIcon } = req.body;
+    botMessage = text || 'Webhook received';
+    icon = customIcon || '🤖';
+  }
+  
+  const msg = {
+    id: uuidv4(),
+    type: 'bot',
+    content: botMessage,
+    user: { username: source || 'Webhook', color: '#6366F1' },
+    icon,
+    timestamp: new Date(),
+    reactions: []
+  };
+  
+  messages.push(msg);
+  if (messages.length > 500) messages.shift();
+  saveMessages(messages);
+  io.emit('message', msg);
+  
+  res.json({ success: true, messageId: msg.id });
+});
+
 const users = new Map();
 const messages = loadMessages();
+const forumTopics = loadForumTopics();
+const webhooks = loadWebhooks();
+let admins = loadAdmins();
+const mutedUsers = new Map();
 const MAX_MESSAGES = 500;
 const voiceUsers = new Map();
+let currentScreenSharer = null;
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   socket.on('join', (username) => {
+    let role = 'member';
+    if (Object.keys(admins).length === 0) {
+      role = 'admin';
+      admins[username] = 'admin';
+      saveAdmins(admins);
+    } else if (admins[username]) {
+      role = admins[username];
+    }
+
     const user = {
       id: socket.id,
       username,
       color: getRandomColor(),
+      status: 'available',
+      customStatus: '',
+      role,
       joinedAt: new Date()
     };
     users.set(socket.id, user);
     
     socket.emit('history', messages);
+    socket.emit('forum-topics', forumTopics);
     io.emit('users', Array.from(users.values()));
     socket.emit('voice-users', Array.from(voiceUsers.values()));
     
+    const muteExpiry = mutedUsers.get(username);
+    if (muteExpiry && muteExpiry > Date.now()) {
+      const duration = Math.ceil((muteExpiry - Date.now()) / 60000);
+      socket.emit('system-message', `You are muted for ${duration} more minutes.`);
+    }
+
     const joinMsg = {
       id: uuidv4(),
       type: 'system',
       content: `${username} joined the chat`,
-      timestamp: new Date()
+      timestamp: new Date(),
+      reactions: []
     };
     messages.push(joinMsg);
     io.emit('message', joinMsg);
   });
 
-  socket.on('message', (content) => {
+  socket.on('set-role', ({ targetUsername, newRole }) => {
+    const user = users.get(socket.id);
+    if (!user || user.role !== 'admin') return;
+
+    if (!['admin', 'moderator', 'member'].includes(newRole)) return;
+    
+    if (user.username === targetUsername && newRole !== 'admin') {
+       const adminCount = Object.values(admins).filter(r => r === 'admin').length;
+       if (adminCount <= 1) return;
+    }
+
+    admins[targetUsername] = newRole;
+    if (newRole === 'member') delete admins[targetUsername];
+    saveAdmins(admins);
+
+    for (const [id, u] of users.entries()) {
+      if (u.username === targetUsername) {
+        u.role = newRole;
+        io.to(id).emit('role-updated', newRole);
+      }
+    }
+    io.emit('users', Array.from(users.values()));
+  });
+
+  socket.on('kick-user', (targetUsername) => {
+    const user = users.get(socket.id);
+    if (!user || !['admin', 'moderator'].includes(user.role)) return;
+
+    const targetRole = admins[targetUsername] || 'member';
+    if (user.role === 'moderator' && (targetRole === 'admin' || targetRole === 'moderator')) return;
+
+    for (const [id, u] of users.entries()) {
+      if (u.username === targetUsername) {
+        io.to(id).emit('kicked');
+        io.sockets.sockets.get(id)?.disconnect();
+      }
+    }
+  });
+
+  socket.on('mute-user', ({ targetUsername, durationMinutes }) => {
+    const user = users.get(socket.id);
+    if (!user || !['admin', 'moderator'].includes(user.role)) return;
+
+    const targetRole = admins[targetUsername] || 'member';
+    if (user.role === 'moderator' && (targetRole === 'admin' || targetRole === 'moderator')) return;
+
+    const expiry = Date.now() + durationMinutes * 60 * 1000;
+    mutedUsers.set(targetUsername, expiry);
+    
+    for (const [id, u] of users.entries()) {
+      if (u.username === targetUsername) {
+        io.to(id).emit('muted', { duration: durationMinutes, expiry });
+      }
+    }
+  });
+
+  socket.on('delete-message', (messageId) => {
     const user = users.get(socket.id);
     if (!user) return;
+
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1) return;
+
+    const msg = messages[msgIndex];
+    const isOwn = msg.user.username === user.username;
+    const canDelete = isOwn || ['admin', 'moderator'].includes(user.role);
+
+    if (canDelete) {
+      messages.splice(msgIndex, 1);
+      saveMessages(messages);
+      io.emit('history', messages);
+    }
+  });
+
+  socket.on('edit-message', ({ messageId, newContent }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    if (msg && msg.user.username === user.username && msg.type === 'text') {
+      msg.content = newContent;
+      msg.edited = true;
+      saveMessages(messages);
+      io.emit('message-updated', msg);
+    }
+  });
+
+  socket.on('message', (content, parentId = null) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
 
     const msg = {
       id: uuidv4(),
       type: 'text',
       content,
-      user: { id: user.id, username: user.username, color: user.color },
-      timestamp: new Date()
+      parentId,
+      replies: [],
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
     };
+    
+    if (parentId) {
+      const parent = messages.find(m => m.id === parentId);
+      if (parent) {
+        if (!parent.replies) parent.replies = [];
+        parent.replies.push(msg.id);
+        io.emit('message-updated', parent);
+      }
+    }
     
     messages.push(msg);
     if (messages.length > MAX_MESSAGES) messages.shift();
@@ -185,12 +466,23 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
 
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
+
     const msg = {
       id: uuidv4(),
       type: 'image',
       content: imageUrl,
-      user: { id: user.id, username: user.username, color: user.color },
-      timestamp: new Date()
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
     };
     
     messages.push(msg);
@@ -200,10 +492,157 @@ io.on('connection', (socket) => {
     io.emit('message', msg);
   });
 
+  socket.on('file', (fileData) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const muteExpiry = mutedUsers.get(user.username);
+    if (muteExpiry) {
+      if (muteExpiry > Date.now()) {
+        socket.emit('system-message', 'You are muted and cannot send messages.');
+        return;
+      } else {
+        mutedUsers.delete(user.username);
+      }
+    }
+
+    const msg = {
+      id: uuidv4(),
+      type: 'file',
+      content: fileData, // { url, filename, originalName, size, mimetype }
+      user: { id: user.id, username: user.username, color: user.color, role: user.role },
+      timestamp: new Date(),
+      reactions: []
+    };
+    
+    messages.push(msg);
+    if (messages.length > MAX_MESSAGES) messages.shift();
+    saveMessages(messages);
+    
+    io.emit('message', msg);
+  });
+
+  socket.on('add-reaction', ({ messageId, emoji }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    if (msg) {
+      if (!msg.reactions) msg.reactions = [];
+      const existingReaction = msg.reactions.find(r => r.emoji === emoji);
+      
+      if (existingReaction) {
+        if (!existingReaction.users.includes(user.username)) {
+          existingReaction.users.push(user.username);
+        }
+      } else {
+        msg.reactions.push({ emoji, users: [user.username] });
+      }
+      
+      saveMessages(messages);
+      io.emit('message-updated', msg);
+    }
+  });
+
+  socket.on('remove-reaction', ({ messageId, emoji }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const msg = messages.find(m => m.id === messageId);
+    if (msg && msg.reactions) {
+      const reaction = msg.reactions.find(r => r.emoji === emoji);
+      if (reaction) {
+        reaction.users = reaction.users.filter(u => u !== user.username);
+        if (reaction.users.length === 0) {
+          msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
+        }
+        saveMessages(messages);
+        io.emit('message-updated', msg);
+      }
+    }
+  });
+
   socket.on('typing', (isTyping) => {
     const user = users.get(socket.id);
     if (!user) return;
     socket.broadcast.emit('typing', { user: user.username, isTyping });
+  });
+
+  socket.on('set-status', ({ status, customStatus }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    user.status = status;
+    user.customStatus = customStatus;
+    io.emit('users', Array.from(users.values()));
+  });
+
+  socket.on('forum-create-topic', ({ title, body, tags }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const topic = {
+      id: uuidv4(),
+      title,
+      body,
+      author: user.username,
+      authorColor: user.color,
+      tags: tags || [],
+      createdAt: new Date(),
+      replies: [],
+      resolved: false
+    };
+
+    forumTopics.unshift(topic);
+    saveForumTopics(forumTopics);
+    io.emit('forum-topics', forumTopics);
+  });
+
+  socket.on('forum-reply', ({ topicId, body }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const topic = forumTopics.find(t => t.id === topicId);
+    if (topic) {
+      const reply = {
+        id: uuidv4(),
+        body,
+        author: user.username,
+        authorColor: user.color,
+        createdAt: new Date()
+      };
+      
+      topic.replies.push(reply);
+      saveForumTopics(forumTopics);
+      io.emit('forum-topics', forumTopics);
+    }
+  });
+
+  socket.on('forum-resolve', ({ topicId }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const topic = forumTopics.find(t => t.id === topicId);
+    if (topic) {
+      if (topic.author === user.username) {
+        topic.resolved = !topic.resolved;
+        saveForumTopics(forumTopics);
+        io.emit('forum-topics', forumTopics);
+      }
+    }
+  });
+
+  socket.on('screen-share-start', () => {
+    if (currentScreenSharer) return;
+    currentScreenSharer = socket.id;
+    io.emit('screen-share-started', { oderId: socket.id, username: users.get(socket.id)?.username });
+  });
+
+  socket.on('screen-share-stop', () => {
+    if (currentScreenSharer === socket.id) {
+      currentScreenSharer = null;
+      io.emit('screen-share-stopped', socket.id);
+    }
   });
 
   socket.on('voice-join', () => {
@@ -262,6 +701,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (currentScreenSharer === socket.id) {
+      currentScreenSharer = null;
+      io.emit('screen-share-stopped', socket.id);
+    }
+
     const user = users.get(socket.id);
     
     if (voiceUsers.has(socket.id)) {
