@@ -394,28 +394,20 @@ io.on('connection', (socket) => {
       joinedAt: new Date()
     };
     users.set(socket.id, user);
+    socket.join('general');
     
     socket.emit('history', messages);
     socket.emit('channels', channels);
     socket.emit('forum-topics', forumTopics);
     io.emit('users', Array.from(users.values()));
-    socket.emit('voice-users', Array.from(voiceUsers.values()));
-    
-    const muteExpiry = mutedUsers.get(username);
-    if (muteExpiry && muteExpiry > Date.now()) {
-      const duration = Math.ceil((muteExpiry - Date.now()) / 60000);
-      socket.emit('system-message', `You are muted for ${duration} more minutes.`);
-    }
+  });
 
-    const joinMsg = {
-      id: uuidv4(),
-      type: 'system',
-      content: `${username} joined the chat`,
-      timestamp: new Date(),
-      reactions: []
-    };
-    messages.push(joinMsg);
-    io.emit('message', joinMsg);
+  socket.on('join-channel', (channelId) => {
+    // Leave all previous rooms except their own socket.id
+    for (const room of socket.rooms) {
+      if (room !== socket.id) socket.leave(room);
+    }
+    socket.join(channelId);
   });
 
   socket.on('set-role', ({ targetUsername, newRole }) => {
@@ -544,7 +536,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('image', (imageUrl, channelId = 'chat') => {
@@ -575,7 +567,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('file', (fileData, channelId = 'chat') => {
@@ -606,7 +598,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('add-reaction', ({ messageId, emoji }) => {
@@ -652,7 +644,7 @@ io.on('connection', (socket) => {
   socket.on('typing', ({ isTyping, channelId = 'general' }) => {
     const user = users.get(socket.id);
     if (!user) return;
-    socket.broadcast.emit('typing', { user: user.username, isTyping, channelId });
+    socket.to(channelId).emit('typing', { user: user.username, isTyping, channelId });
   });
 
   socket.on('set-status', ({ status, customStatus }) => {
@@ -726,7 +718,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('image', ({ imageUrl, channelId = 'general' }) => {
@@ -757,7 +749,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('file', ({ fileData, channelId = 'general' }) => {
@@ -788,7 +780,7 @@ io.on('connection', (socket) => {
     if (messages.length > MAX_MESSAGES) messages.shift();
     saveMessages(messages);
     
-    io.emit('message', msg);
+    io.to(channelId).emit('message', msg);
   });
 
   socket.on('forum-create-topic', ({ title, body, tags }) => {

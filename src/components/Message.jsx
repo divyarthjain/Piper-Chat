@@ -69,7 +69,7 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
     }
   };
 
-  const roleBadge = message.user?.role === 'admin' ? '👑' : message.user?.role === 'moderator' ? '🛡️' : '';
+  const roleBadge = message.user?.role === 'admin' ? 'Owner' : message.user?.role === 'moderator' ? 'Mod' : '';
   const canDelete = isOwn || ['admin', 'moderator'].includes(currentUserRole);
 
   const formatTime = (timestamp) => {
@@ -78,8 +78,8 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
 
   if (message.type === 'system') {
     return (
-      <div className="flex justify-center">
-        <span className="px-4 py-1.5 bg-white/10 rounded-full text-white/60 text-sm">
+      <div className="flex justify-center py-2">
+        <span className="px-3 py-1 bg-github-bg-secondary rounded-full text-github-text-secondary text-xs border border-github-border">
           {message.content}
         </span>
       </div>
@@ -88,24 +88,20 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
 
   if (message.type === 'bot') {
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[75%]">
-          <div className="flex items-center gap-2 mb-1 ml-1">
-            <div className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-white text-sm">
-              {message.icon || '🤖'}
-            </div>
-            <span className="text-white/70 text-sm font-medium flex items-center gap-1">
+      <div className="flex gap-4 py-2 group">
+        <div className="w-10 h-10 rounded-full bg-github-bg-secondary border border-github-border flex items-center justify-center text-lg flex-shrink-0">
+          {message.icon || '🤖'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-semibold text-github-text text-sm">
               {message.user?.username || 'Bot'}
-              <span className="px-1.5 py-0.5 bg-violet-500/30 rounded text-xs text-violet-300">BOT</span>
             </span>
+            <span className="px-1.5 py-0.5 bg-github-accent/20 border border-github-accent/30 rounded-full text-xs text-github-accent font-medium">BOT</span>
+            <span className="text-github-text-secondary text-xs">{formatTime(message.timestamp)}</span>
           </div>
-          <div className="rounded-2xl px-4 py-2.5 bg-violet-500/20 border border-violet-500/30 text-white rounded-bl-md">
-            <div className="break-words prose prose-invert prose-sm max-w-none prose-p:my-1">
-              <ReactMarkdown>{message.content}</ReactMarkdown>
-            </div>
-          </div>
-          <div className="text-white/40 text-xs mt-1 ml-1">
-            {formatTime(message.timestamp)}
+          <div className="text-github-text text-sm prose prose-invert prose-sm max-w-none">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
           </div>
         </div>
       </div>
@@ -113,115 +109,142 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
   }
 
   return (
-    <>
-      <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-        <div className={`max-w-[75%] ${isOwn ? 'order-2' : 'order-1'}`}>
-          {!isOwn && (
-            <div className="flex items-center gap-2 mb-1 ml-1">
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                style={{ backgroundColor: message.user?.color || '#6366f1' }}
-              >
-                {message.user?.username?.[0]?.toUpperCase() || '?'}
-              </div>
-              <span className="text-white/70 text-sm font-medium flex items-center gap-1">
-                {message.user?.username}
-                {roleBadge && <span title={message.user?.role}>{roleBadge}</span>}
-              </span>
-            </div>
-          )}
+    <div className={`flex gap-3 py-2 group ${isOwn ? '' : ''}`}>
+      <div className="flex-shrink-0">
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm"
+          style={{ backgroundColor: message.user?.color || '#6366f1' }}
+        >
+          {message.user?.username?.[0]?.toUpperCase() || '?'}
+        </div>
+      </div>
 
-          <div className="relative group">
-            <div
-              className={`rounded-2xl px-4 py-2.5 ${
-                isOwn
-                  ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-br-md'
-                  : 'bg-white/15 text-white rounded-bl-md'
-              }`}
-            >
-              {message.type === 'file' ? (
-                <div className="flex items-center gap-3 min-w-[200px]">
-                  <div className="w-10 h-10 bg-black/20 rounded-lg flex items-center justify-center text-xl shrink-0">
-                    {message.content.mimetype?.includes('pdf') ? '📄' : 
-                     message.content.mimetype?.includes('zip') ? '📦' :
-                     message.content.mimetype?.includes('audio') ? '🎵' :
-                     message.content.mimetype?.includes('video') ? '🎬' :
-                     message.content.mimetype?.includes('text') || message.content.originalName?.match(/\.(js|jsx|ts|tsx|py|html|css|json)$/) ? '📝' : '📎'}
-                  </div>
-                  <div className="flex-1 min-w-0 mr-2">
-                    <div className="font-medium text-sm truncate max-w-[180px]" title={message.content.originalName}>
-                      {message.content.originalName}
-                    </div>
-                    <div className="text-xs text-white/60">
-                      {message.content.size < 1024 * 1024 
-                        ? `${(message.content.size / 1024).toFixed(1)} KB`
-                        : `${(message.content.size / 1024 / 1024).toFixed(1)} MB`}
-                    </div>
-                  </div>
-                  <a 
-                    href={`${SERVER_URL}${message.content.url}`} 
-                    download={message.content.originalName}
-                    className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors shrink-0"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Download"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                  </a>
+      <div className="flex-1 min-w-0">
+        <div className="border border-github-border rounded-md bg-github-bg-secondary/30">
+          <div className="flex items-center justify-between px-3 py-2 bg-github-bg-secondary/50 border-b border-github-border rounded-t-md">
+             <div className="flex items-center gap-2">
+                <span className="font-semibold text-github-text text-sm hover:underline cursor-pointer">
+                  {message.user?.username}
+                </span>
+                {roleBadge && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-github-border text-xs text-github-text-secondary border border-github-border/50">
+                    {roleBadge}
+                  </span>
+                )}
+                <span className="text-github-text-secondary text-xs">
+                  commented at {formatTime(message.timestamp)}
+                </span>
+                {message.edited && <span className="text-github-text-secondary text-xs">(edited)</span>}
+             </div>
+             
+             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => setShowPicker(!showPicker)}
+                  className="p-1 rounded text-github-text-secondary hover:text-github-accent transition-colors"
+                  title="Add reaction"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setIsReplying(!isReplying)}
+                  className="p-1 rounded text-github-text-secondary hover:text-github-accent transition-colors"
+                  title="Reply"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                </button>
+                {(isOwn || canDelete) && (
+                   <div className="relative">
+                      <button
+                        onClick={() => setShowMenu(!showMenu)}
+                        className="p-1 rounded text-github-text-secondary hover:text-github-text transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                      </button>
+                      {showMenu && (
+                        <div className="absolute right-0 top-full mt-1 bg-github-bg-secondary border border-github-border rounded-md shadow-xl py-1 z-20 min-w-[120px]">
+                           {message.type === 'text' && (
+                             <button
+                               onClick={handleEdit}
+                               className="w-full text-left px-4 py-1.5 text-xs text-github-text hover:bg-github-accent hover:text-white transition-colors"
+                             >
+                               Edit
+                             </button>
+                           )}
+                           <button
+                             onClick={() => { handleDelete(); setShowMenu(false); }}
+                             className="w-full text-left px-4 py-1.5 text-xs text-github-danger hover:bg-github-danger hover:text-white transition-colors"
+                           >
+                             Delete
+                           </button>
+                        </div>
+                      )}
+                   </div>
+                )}
+             </div>
+          </div>
+          
+          <div className="p-3 bg-transparent">
+             {message.type === 'file' ? (
+                <div className="flex items-center gap-3 p-3 bg-github-bg border border-github-border rounded-md">
+                   <div className="text-2xl">
+                     {message.content.mimetype?.includes('pdf') ? '📄' : 
+                      message.content.mimetype?.includes('zip') ? '📦' :
+                      message.content.mimetype?.includes('audio') ? '🎵' :
+                      message.content.mimetype?.includes('video') ? '🎬' : '📎'}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                     <div className="font-medium text-sm text-github-text truncate">
+                       {message.content.originalName}
+                     </div>
+                     <div className="text-xs text-github-text-secondary">
+                       {message.content.size < 1024 * 1024 
+                         ? `${(message.content.size / 1024).toFixed(1)} KB`
+                         : `${(message.content.size / 1024 / 1024).toFixed(1)} MB`}
+                     </div>
+                   </div>
+                   <a 
+                     href={`${SERVER_URL}${message.content.url}`} 
+                     download={message.content.originalName}
+                     className="text-github-accent hover:underline text-sm font-medium"
+                     target="_blank"
+                     rel="noopener noreferrer"
+                   >
+                     Download
+                   </a>
                 </div>
-              ) : message.type === 'image' ? (
+             ) : message.type === 'image' ? (
                 <div className="relative">
-                  {!imageLoaded && (
-                    <div className="w-48 h-32 bg-white/10 rounded-lg animate-pulse flex items-center justify-center">
-                      <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  )}
-                  <img
-                    src={`${SERVER_URL}${message.content}`}
-                    alt="Shared image"
-                    className={`max-w-full max-h-64 rounded-lg cursor-pointer hover:opacity-90 transition-opacity ${imageLoaded ? 'block' : 'hidden'}`}
-                    onLoad={() => setImageLoaded(true)}
-                    onClick={() => setShowFullImage(true)}
-                  />
+                   <img
+                     src={`${SERVER_URL}${message.content}`}
+                     alt="Shared image"
+                     className="max-w-full rounded-md cursor-pointer border border-github-border"
+                     onClick={() => setShowFullImage(true)}
+                   />
                 </div>
-              ) : isEditing ? (
-                <div className="flex flex-col gap-2 min-w-[200px]">
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full bg-black/20 text-white rounded p-2 outline-none border border-white/10 focus:border-violet-500/50 resize-none text-sm font-normal"
-                    rows={3}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSaveEdit();
-                      } else if (e.key === 'Escape') {
-                        handleCancelEdit();
-                      }
-                    }}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button 
-                      onClick={handleCancelEdit} 
-                      className="px-2 py-1 text-xs rounded hover:bg-white/10 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button 
-                      onClick={handleSaveEdit} 
-                      className="px-2 py-1 text-xs bg-violet-600 rounded hover:bg-violet-700 transition-colors"
-                    >
-                      Save
-                    </button>
-                  </div>
+             ) : isEditing ? (
+                <div className="flex flex-col gap-2">
+                   <textarea
+                     value={editContent}
+                     onChange={(e) => setEditContent(e.target.value)}
+                     className="w-full bg-github-bg text-github-text rounded-md p-2 border border-github-border focus:border-github-accent focus:ring-1 focus:ring-github-accent outline-none text-sm font-mono min-h-[100px]"
+                   />
+                   <div className="flex justify-end gap-2">
+                     <button onClick={handleCancelEdit} className="px-3 py-1.5 text-xs font-medium text-github-text-secondary bg-github-bg border border-github-border rounded-md hover:bg-github-bg-secondary">
+                       Cancel
+                     </button>
+                     <button onClick={handleSaveEdit} className="px-3 py-1.5 text-xs font-medium text-white bg-github-success border border-github-success rounded-md hover:bg-opacity-90">
+                       Update comment
+                     </button>
+                   </div>
                 </div>
-              ) : (
-                <div className="break-words prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-code:text-pink-300 prose-a:text-violet-400">
+             ) : (
+                <div className="prose prose-invert prose-sm max-w-none text-github-text prose-a:text-github-accent prose-code:bg-github-bg-secondary prose-code:text-github-text prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-github-bg-secondary prose-pre:border prose-pre:border-github-border">
                   <ReactMarkdown
                     components={{
                       code({ node, inline, className, children, ...props }) {
@@ -233,7 +256,7 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
                             PreTag="div"
                             customStyle={{
                               margin: 0,
-                              borderRadius: '0.5rem',
+                              borderRadius: '0.375rem',
                               fontSize: '0.85rem',
                             }}
                             {...props}
@@ -241,176 +264,79 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
                             {String(children).replace(/\n$/, '')}
                           </SyntaxHighlighter>
                         ) : (
-                          <code className="bg-white/20 px-1.5 py-0.5 rounded text-pink-300 text-sm" {...props}>
+                          <code className="bg-github-bg-secondary text-github-text px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
                             {children}
                           </code>
                         );
-                      },
-                      a({ children, href, ...props }) {
-                        return (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline" {...props}>
-                            {children}
-                          </a>
-                        );
-                      },
+                      }
                     }}
                   >
                     {message.content}
                   </ReactMarkdown>
                   {extractUrl(message.content) && <LinkPreview url={extractUrl(message.content)} />}
                 </div>
-              )}
-            </div>
-
-            <div className={`absolute top-1/2 -translate-y-1/2 ${isOwn ? '-left-16' : '-right-16'} opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 items-center`}>
-              <button
-                onClick={() => setShowPicker(!showPicker)}
-                className="p-1 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60 transition-colors"
-                title="Add reaction"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-
-              <button
-                onClick={() => setIsReplying(!isReplying)}
-                className="p-1 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60 transition-colors"
-                title="Reply"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-              </button>
-
-              {isOwn ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowMenu(!showMenu)}
-                    className="p-1 rounded-full bg-black/40 text-white/70 hover:text-white hover:bg-black/60 transition-colors"
-                    title="Message options"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-                  {showMenu && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-[#1a1b26] border border-white/10 rounded-xl p-1 shadow-xl flex flex-col gap-0.5 z-20 min-w-[100px] overflow-hidden">
-                      {message.type === 'text' && (
+             )}
+          </div>
+          
+          {(message.reactions?.length > 0 || showPicker) && (
+             <div className="px-3 py-2 bg-github-bg-secondary/30 border-t border-github-border flex items-center gap-2 flex-wrap">
+                {showPicker && (
+                   <div className="flex gap-1 bg-github-bg border border-github-border rounded-full p-1 shadow-sm">
+                      {commonEmojis.map(emoji => (
                         <button
-                          onClick={handleEdit}
-                          className="w-full text-left px-3 py-1.5 text-sm text-white/80 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
+                          key={emoji}
+                          onClick={() => handleReaction(emoji)}
+                          className="w-7 h-7 flex items-center justify-center hover:bg-github-bg-secondary rounded-full transition-colors text-base"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                          Edit
+                          {emoji}
                         </button>
-                      )}
-                      <button
-                        onClick={() => { handleDelete(); setShowMenu(false); }}
-                        className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                canDelete && (
+                      ))}
+                   </div>
+                )}
+                {message.reactions?.map((reaction, idx) => (
                   <button
-                    onClick={handleDelete}
-                    className="p-1 rounded-full bg-black/40 text-red-400 hover:text-red-300 hover:bg-black/60 transition-colors"
-                    title="Delete message"
+                    key={idx}
+                    onClick={() => handleReaction(reaction.emoji)}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                      reaction.users.includes(currentUser)
+                        ? 'bg-github-accent/10 border-github-accent/30 text-github-accent'
+                        : 'bg-github-bg border-github-border text-github-text-secondary hover:bg-github-bg-secondary'
+                    }`}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                    <span>{reaction.emoji}</span>
+                    <span>{reaction.users.length}</span>
                   </button>
-                )
-              )}
-              
-              {showPicker && (
-                <div className={`absolute bottom-full mb-2 ${isOwn ? 'right-0' : 'left-0'} bg-[#1a1b26] border border-white/10 rounded-xl p-2 shadow-xl flex gap-1 z-10 min-w-max`}>
-                  {commonEmojis.map(emoji => (
-                    <button
-                      key={emoji}
-                      onClick={() => handleReaction(emoji)}
-                      className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors text-lg"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {message.reactions && message.reactions.length > 0 && (
-            <div className={`flex flex-wrap gap-1 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-              {message.reactions.map((reaction, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleReaction(reaction.emoji)}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
-                    reaction.users.includes(currentUser)
-                      ? 'bg-violet-500/20 border-violet-500/50 text-violet-200'
-                      : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
-                  }`}
-                >
-                  <span>{reaction.emoji}</span>
-                  <span>{reaction.users.length}</span>
-                </button>
-              ))}
-            </div>
+                ))}
+             </div>
           )}
-
-          {isReplying && (
-            <div className={`mt-2 flex flex-col gap-2 ${isOwn ? 'items-end' : 'items-start'}`}>
-              <div className="w-full max-w-sm">
-                <textarea
-                  value={replyContent}
-                  onChange={(e) => setReplyContent(e.target.value)}
-                  placeholder="Write a reply..."
-                  className="w-full bg-black/20 text-white rounded-lg p-2 text-sm outline-none border border-white/10 focus:border-violet-500/50 resize-none"
-                  rows={2}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleReplySubmit();
-                    } else if (e.key === 'Escape') {
-                      setIsReplying(false);
-                    }
-                  }}
-                />
-                <div className="flex justify-end gap-2 mt-1">
-                  <button
-                    onClick={() => setIsReplying(false)}
-                    className="px-2 py-1 text-xs text-white/60 hover:text-white transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleReplySubmit}
-                    disabled={!replyContent.trim()}
-                    className="px-3 py-1 text-xs bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Reply
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className={`text-white/40 text-xs mt-1 ${isOwn ? 'text-right mr-1' : 'ml-1'}`}>
-            {formatTime(message.timestamp)}
-            {message.edited && <span className="ml-1 opacity-70">(edited)</span>}
-          </div>
         </div>
+
+        {isReplying && (
+           <div className="mt-2 ml-4 flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-github-bg-secondary border border-github-border flex items-center justify-center flex-shrink-0 text-xs">
+                 ↪
+              </div>
+              <div className="flex-1 border border-github-border rounded-md bg-github-bg">
+                 <textarea
+                   value={replyContent}
+                   onChange={(e) => setReplyContent(e.target.value)}
+                   placeholder="Write a reply..."
+                   className="w-full bg-transparent text-github-text p-2 text-sm outline-none min-h-[60px] resize-y"
+                   autoFocus
+                   onKeyDown={(e) => {
+                     if (e.key === 'Enter' && !e.shiftKey) {
+                       e.preventDefault();
+                       handleReplySubmit();
+                     } else if (e.key === 'Escape') setIsReplying(false);
+                   }}
+                 />
+                 <div className="flex justify-end gap-2 p-2 bg-github-bg-secondary/30 border-t border-github-border">
+                    <button onClick={() => setIsReplying(false)} className="px-3 py-1 text-xs text-github-text-secondary hover:text-github-text">Cancel</button>
+                    <button onClick={handleReplySubmit} disabled={!replyContent.trim()} className="px-3 py-1 text-xs bg-github-success text-white rounded-md font-medium disabled:opacity-50">Reply</button>
+                 </div>
+              </div>
+           </div>
+        )}
       </div>
 
       {showFullImage && message.type === 'image' && (
@@ -421,7 +347,7 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
           <img
             src={`${SERVER_URL}${message.content}`}
             alt="Full size image"
-            className="max-w-full max-h-full object-contain rounded-lg"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
           />
           <button
             onClick={() => setShowFullImage(false)}
@@ -433,7 +359,7 @@ function Message({ message, isOwn, currentUser, currentUserRole, socket, onReply
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 }
 

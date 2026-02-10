@@ -14,12 +14,12 @@ function ChannelList({ channels, activeChannel, onSelectChannel, onCreateChannel
   };
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between px-2 mb-2">
-        <h2 className="text-white font-bold uppercase text-xs tracking-wider opacity-50">Channels</h2>
+    <div className="flex flex-col gap-1 w-full">
+      <div className="flex items-center justify-between px-3 py-2 mb-2 group">
+        <h2 className="text-github-text-secondary font-semibold text-xs uppercase tracking-wider">Channels</h2>
         <button 
           onClick={() => setIsCreating(true)}
-          className="text-white/50 hover:text-white transition-colors"
+          className="text-github-text-secondary hover:text-github-accent transition-colors opacity-0 group-hover:opacity-100"
           title="Create Channel"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -29,13 +29,13 @@ function ChannelList({ channels, activeChannel, onSelectChannel, onCreateChannel
       </div>
 
       {isCreating && (
-        <form onSubmit={handleCreate} className="px-2 mb-2">
+        <form onSubmit={handleCreate} className="px-3 mb-2">
           <input
             type="text"
             value={newChannelName}
             onChange={(e) => setNewChannelName(e.target.value)}
             placeholder="channel-name"
-            className="w-full bg-black/20 text-white text-sm rounded px-2 py-1 focus:outline-none border border-white/10 focus:border-white/30"
+            className="w-full bg-github-bg-secondary text-github-text text-sm rounded-md px-2 py-1 focus:outline-none border border-github-border focus:border-github-accent focus:ring-1 focus:ring-github-accent"
             autoFocus
             onBlur={() => !newChannelName && setIsCreating(false)}
             maxLength={20}
@@ -47,13 +47,13 @@ function ChannelList({ channels, activeChannel, onSelectChannel, onCreateChannel
         <button
           key={channel}
           onClick={() => onSelectChannel(channel)}
-          className={`text-left px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+          className={`text-left px-3 py-1.5 rounded-md mx-2 text-sm transition-all flex items-center gap-2 group relative ${
             activeChannel === channel 
-              ? 'bg-white/20 text-white font-medium shadow-sm' 
-              : 'text-white/60 hover:text-white hover:bg-white/5'
+              ? 'bg-github-accent/10 text-github-text font-medium relative before:absolute before:left-[-10px] before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-4 before:bg-github-accent before:rounded-r' 
+              : 'text-github-text-secondary hover:text-github-text hover:bg-github-bg-secondary/50'
           }`}
         >
-          <span className="opacity-50">#</span>
+          <span className={`text-opacity-50 ${activeChannel === channel ? 'text-github-accent' : 'text-github-text-secondary'}`}>#</span>
           <span className="truncate">{channel}</span>
         </button>
       ))}
