@@ -50,10 +50,14 @@ function ChannelList({ channels, activeChannel, onSelectChannel, onCreateChannel
           className={`text-left px-3 py-1.5 rounded-md mx-2 text-sm transition-all flex items-center gap-2 group relative ${
             activeChannel === channel 
               ? 'bg-github-accent/10 text-github-text font-medium relative before:absolute before:left-[-10px] before:top-1/2 before:-translate-y-1/2 before:w-1 before:h-4 before:bg-github-accent before:rounded-r' 
-              : 'text-github-text-secondary hover:text-github-text hover:bg-github-bg-secondary/50'
+              : 'text-github-text-secondary hover:text-github-text hover:bg-github-bg-secondary'
           }`}
         >
-          <span className={`text-opacity-50 ${activeChannel === channel ? 'text-github-accent' : 'text-github-text-secondary'}`}>#</span>
+          <span className={`flex-shrink-0 ${activeChannel === channel ? 'text-github-accent' : 'text-github-text-secondary/50'}`}>
+            <svg className="w-4 h-4" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true" fill="currentColor">
+              <path d="M6.75 2a.75.75 0 0 1 .75.75V4.5h2V2.75a.75.75 0 0 1 1.5 0V4.5h3.25a.75.75 0 0 1 0 1.5H11v3h3.25a.75.75 0 0 1 0 1.5H11v1.75a.75.75 0 0 1-1.5 0V10.5h-2v1.75a.75.75 0 0 1-1.5 0V10.5H2.75a.75.75 0 0 1 0-1.5H6v-3H2.75a.75.75 0 0 1 0-1.5H6V2.75A.75.75 0 0 1 6.75 2ZM11 9V6H7.5v3H11Z"></path>
+            </svg>
+          </span>
           <span className="truncate">{channel}</span>
         </button>
       ))}
