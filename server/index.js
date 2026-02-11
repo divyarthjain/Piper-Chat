@@ -394,7 +394,7 @@ io.on('connection', (socket) => {
       joinedAt: new Date()
     };
     users.set(socket.id, user);
-    socket.join('general');
+    socket.join('general'); // Auto-join general channel
     
     socket.emit('history', messages);
     socket.emit('channels', channels);
