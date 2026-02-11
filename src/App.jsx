@@ -22,6 +22,17 @@ function App() {
   }, [muted]);
 
   useEffect(() => {
+    const onConnect = () => {
+      if (username) {
+        console.log('Reconnecting...');
+        socket.emit('join', username);
+      }
+    };
+    socket.on('connect', onConnect);
+    return () => socket.off('connect', onConnect);
+  }, [username]);
+
+  useEffect(() => {
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
@@ -125,6 +136,17 @@ function App() {
       socket.off('role-updated');
     };
   }, []);
+
+  useEffect(() => {
+    const onConnect = () => {
+      if (username) {
+        console.log('Reconnecting...');
+        socket.emit('join', username);
+      }
+    };
+    socket.on('connect', onConnect);
+    return () => socket.off('connect', onConnect);
+  }, [username]);
 
   const handleJoin = useCallback((name) => {
     soundManager.init(); // Initialize audio context on user gesture
