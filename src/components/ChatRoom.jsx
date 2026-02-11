@@ -144,7 +144,7 @@ function ChatRoom({ socket, username, messages, forumTopics, users, channels, ty
     if (fileData.mimetype?.startsWith('image/')) {
       onSendImage(fileData.url, activeChannel);
     } else {
-      socket.emit('file', fileData, activeChannel);
+      socket.emit('file', { fileData, channelId: activeChannel });
     }
   };
 

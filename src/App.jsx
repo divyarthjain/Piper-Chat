@@ -38,6 +38,14 @@ function App() {
       setForumTopics(topics);
     });
 
+    socket.on('forum-topic-created', (newTopic) => {
+      setForumTopics(prev => [newTopic, ...prev]);
+    });
+
+    socket.on('forum-topic-updated', (updatedTopic) => {
+      setForumTopics(prev => prev.map(t => t.id === updatedTopic.id ? updatedTopic : t));
+    });
+
     socket.on('message', (msg) => {
       setMessages((prev) => [...prev, msg]);
 
